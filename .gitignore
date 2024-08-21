@@ -1,0 +1,29 @@
+#
+.DS_Store
+autoinstall.cache.d
+project.xcworkspace
+xcuserdata
+
+# Ignore auto-generated files by VS & VSCode.
+/.vs/
+/.vscode/
+
+# Ignore common tool auto-generated files.
+.gdbinit
+.gdb_history
+tags
+*~
+.*.sw[a-p]
+.cache
+.clangd
+compile_commands.json
+__pycache__
+
+# Ignore CMake caches outside of the build directory.
+__cmake_systeminformation/
+
+# Local overrides configuration files
+LocalOverrides.xcconfig
+
+# Ignore user CMake presets
+CMakeUserPresets.json
