@@ -4,7 +4,7 @@
 #define PRINTF_SPECIFIERS	PRINTF_SPECIFIERS_STD "bQ"
 
 // Include all specifiers valid for printf(3) but not in STD_PRINTF_SPECIFIERS
-#define PRINTF_SPECIFIERS_INVALID "//npDOUv" //"bkmrwyBHIJKLMNOPQRTUVWYZ"
+#define PRINTF_SPECIFIERS_INVALID "npDOUv" //"bkmrwyBHIJKLMNOPQRTUVWYZ"
 
 // Include all length modifiers recognized by printf(3)
 #define PRINTF_LENGTHS "hlLjtzq"
@@ -83,7 +83,7 @@ fromunicode(char32_t codepoint) {
 
 	char *returnstr = malloc(MB_LEN_MAX + 1);
 	size_t e;
-	mbstate_t state;
+	mbstate_t ps;
 
 	/*
 	Initialize state -- unclear if this is needed or even desirable
@@ -297,8 +297,8 @@ sanitize1fmt(char *fmt, size_t fmtlen, char *specifier, size_t specifierlen) {
 
 	char *c;
 
-	// Could also use fmt[strcspn(fmt,"*")] = '\0' here if we wanted to avoid string pointers
-	if ( ( c = strpbrk(fmt,"*" PRINTF_SPECIFIERS_INVALID PRINTF_SPECIFIERS) ) != NULL ) {					anyerrno = EINVAL;
+	// Could also use fmt[strcspn(fmt,ETC)] = '\0' here if we wanted to avoid string pointers
+	if ( ( c = strpbrk(fmt,"*$%\\" PRINTF_SPECIFIERS_INVALID PRINTF_SPECIFIERS) ) != NULL ) {					anyerrno = EINVAL;
 		fprintf(stderr,"%s: Illegal format \"%%%s%s\" truncated to \"%%%.*s%s\"\n",progname,fmt,specifier,(int) (c-fmt),fmt,specifier);
 		c[0] = '\0';
 		fmtlen = (c-fmt);
@@ -325,13 +325,13 @@ prep1fmt(size_t *returnlen,
 	char *ufmt;
 	size_t ufmtlen;
 
-	ufmtlen = strlen("%s%") + fmtlen + length_modifierlen + specifierlen + strlen("%s");
+	ufmtlen = strlen("%1$s%2$") + fmtlen + length_modifierlen + specifierlen + strlen("%3$s");
 	ufmt = malloc((ufmtlen+1) * sizeof(char));
-	strcpy(ufmt,"%s%"); // It is assumed fmt does not include % prefix of the format specification
+	strcpy(ufmt,"%1$s%2$"); // It is assumed fmt does not include % prefix of the format specification
 	strcat(ufmt,fmt);
 	strcat(ufmt,length_modifier);
 	strcat(ufmt,specifier);
-	strcat(ufmt,"%s");
+	strcat(ufmt,"%3$s");
 
 	*returnlen = ufmtlen;
 	return ufmt;
