@@ -71,6 +71,7 @@ As such I wrote a `printf(1)` from scratch as a way to explore these issues in t
   - Character-by-character processing deemed acceptable for initial version to handle the combination of two character (e.g. `\n` and octal escape sequences (e.g. `"\123"`) required by the standard in addition to the Unicode escape sequences included as an extension
 * Don't scan the [_Format_] and/or [_Specifier_] components for escape sequences since escape sequences are not valid there by standard
 * Handle the appearence of `*` in the [_Format_] to indicate using the value of the next argument for the width and/or precision of a conversion specification with a simple substitution prior to passing the format to `printf(3)` for the same reasons that each batch was limited to one conversion specification
+* Use "positional" conversion specifications for calls to `printf(3)` so that it doesn't match the wrong argument to a conversion specification when another conversion specification (e.g. the format operand supplied by the user) is invalid
 * The "positional" or "number argument" conversion specification would not be supported (see [Standards](#Standards)) in the initial version
 
 ### Results
@@ -95,8 +96,6 @@ As such I wrote a `printf(1)` from scratch as a way to explore these issues in t
 * Use `sscanf(3)` for all parsing
 * Recursive function for parsing the format string
 * Limit each batch to just text or just a format specifiation rather than the [_Prologue_][_%_][_Format_][_Specifier_][_Epilogue_] format above
-* Depend on `printf(3)` to reject invalid format arguments
-  - Unfortunately at least some versions of MacOS X's `printf(3)` crash on some simple but invalid formats
 
 ### Other ideas
 * Rewrite routines that process escape sequences, handle width/precision substitutions in conversion specifications, and sanitize conversion specifications to use `sscanf(3)` rather than character-by-character processing
