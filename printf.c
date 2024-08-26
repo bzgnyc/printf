@@ -688,7 +688,7 @@ parse1fmt(char *s1, size_t *returnn1,
 						n4 = n4 - n3;
 						break;
 					} // else d == 0 -> no match
-					// If no match from 2nd sscanf then it's either %% or %[PRINTF_SPECIFIER] same as case=2 with no text -> no break and fall through
+					// If no match from 2nd sscanf then it's either %% or %[PRINTF_SPECIFIER] or %[INVALID] same as case=2 with no text -> no break and fall through
 				case 2: // ^[^%]+%[% or PRINTF_SPECIFIER] -> text followed by simple [no flags/etc] printf format
 					if ( fmt[n2] == '%' ) {
 						strcpy(s3,"%"); n3 = n2 + strlen("%");
@@ -705,8 +705,10 @@ parse1fmt(char *s1, size_t *returnn1,
 						} else {
 							if ( d == 0 ) {
 								anyerrno = EINVAL;
-								fprintf(stderr,"%s: Illegal format %s\n",progname,&fmt[n1]);
-								strncpy(s4,&fmt[n2],1); s4[1]='\0'; n4 = strlen(s4);
+								fprintf(stderr,"%s: Illegal format \"%.*s\" truncated to \"%.*s\"\n",progname,(int) (n2 + strnlen(&fmt[n2],1)),&fmt[n1],(int) strnlen(&fmt[n2],1),&fmt[n2]);
+//								strncpy(s4,&fmt[n2],1); s4[1]='\0'; n4 = strlen(s4);
+								s4[0]='\0'; n4 = 0;
+//								n = n2 + strnlen(&fmt[n2],1);
 							}
 							n = n2 + n4;
 							s5[0] = '\0'; n5 = 0;
@@ -736,7 +738,7 @@ parse1fmt(char *s1, size_t *returnn1,
 
 
 int
-fmtpullparams(char *s3, int nextarg, char *args[], int numargs) {
+fmtpullparams(char *s3, size_t *n3, int nextarg, char *args[], int numargs) {
 
 	char	*c;
 	size_t	fmt_width_i;
@@ -803,7 +805,8 @@ parsefmt(char *fmt, size_t fmtlen, char *args[], int numargs) {
 	while ( fmt[0] != '\0' ) {
 		n = parse1fmt(s1,&n1,s2,&n2,s3,&n3,s4,&n4,s5,&n5,fmt,fmtlen);
 
-		nextarg = fmtpullparams(s3,nextarg,args,numargs);
+		if ( n3 > 0 )
+			nextarg = fmtpullparams(s3,&n3,nextarg,args,numargs);
 
 		if ( printf1arg(s1,n1,s3,n3,s4,n4,s5,n5,args[nextarg]) != 0 ) {
 			free(s5); free(s3); free(s1);
