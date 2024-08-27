@@ -378,10 +378,10 @@ printf1arg(char *prologue, size_t prologuelen,
 		uepilogue = "";
 
 	// Just print the text if no formats in this batch
-	if ( fmtlen == 0 && specifierlen == 0 )
+	if ( specifierlen == 0 && fmtlen == 0 )
 		// printf("%s",X) is multiple times faster than printf(X)
 		printf("%s%s",uprologue,uepilogue);
-	else if ( strcmp(fmt,"%" ) == 0 ) // "Format" of this batch was a "%%"
+	else if ( specifierlen == 0 && strcmp(fmt,"%" ) == 0 ) // "Format" of this batch was a "%%"
 		printf("%s%%%s",uprologue,uepilogue);
 	else {
 		// Sanitize fmt for anything that would throw off call printf(3) such as causing it to read an extra argument
