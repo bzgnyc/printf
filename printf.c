@@ -236,22 +236,25 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 	char c[8+1];
 	char *endptr;
 	char *u;
-	int i = 0;
-	int j = 0;
 	int d = 0;
+	size_t i = 0;
+	size_t j = 0;
+	size_t seglen;
 
 	while ( d >= 0 && srcstr[i] != '\0' ) {
-		if ( j < maxstrlen ) {
-			if ( srcstr[i] != '\\' ) {
-				returnstr[j] = srcstr[i];
-				j++; i++;
-			} else {
+		if ( (maxstrlen-j) > 0 ) {
+			seglen = 0;
+        	        d = sscanf(&srcstr[i],"%[^\\]%zn",&returnstr[j],&seglen);
+			i += seglen; j += seglen;
+			if ( srcstr[i] == '\\' ) {
 				i++;
 				if ( srcstr[i] == 'c' && abortext != NULL ) {
 					*abortext = 1;
 					break;
 				} else {
 					switch (srcstr[i]) {
+						case '\\': returnstr[j] = '\\'; break;
+						case '\'': returnstr[j] = '\''; break;
 						case 'a': returnstr[j] = '\a'; break;
 						case 'b': returnstr[j] = '\b'; break;
 						case 'f': returnstr[j] = '\f'; break;
@@ -259,17 +262,15 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 						case 'r': returnstr[j] = '\r'; break;
 						case 't': returnstr[j] = '\t'; break;
 						case 'v': returnstr[j] = '\v'; break;
-						case '\'': returnstr[j] = '\''; break;
-						case '\\': returnstr[j] = '\\'; break;
 						case 'u':
 #ifdef HAVE_FROMUNICODE
-							strncpy(c,&srcstr[i+1],4); c[4]='\0';
-							u = fromunicode(strtocodepoint(c,&endptr,16));
+							strncpy(c,&srcstr[i+1],4); c[4]='\0';										u = fromunicode(strtocodepoint(c,&endptr,16));
 							i += (endptr-c);
 							if ( (j + strlen(u)) < maxstrlen )
 								j += stpcpy(&returnstr[j],u) - &returnstr[j] - 1; // -1 to offset j++ below
 							else
 								j = maxstrlen;
+
 							free(u);
 #else
 							anyerrno = EINVAL;
@@ -285,6 +286,7 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 								j += stpcpy(&returnstr[j],u) - &returnstr[j] - 1; // -1 to offset j++ below
 							else
 								j = maxstrlen;
+
 							free(u);
 #else
 							anyerrno = EINVAL;
@@ -301,6 +303,13 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 							returnstr[j] = strtoul(c,&endptr,8);
 							i += (endptr-1-c);
 							break;
+						case '\0':
+							i--; // -1 to offset i++ below since we're already End Of String
+							// Fall through to unrecognized (i.e. default) since trailing Backslash is also an error
+						default:
+                               				anyerrno = EINVAL;
+                                			fprintf(stderr,"%s: Unrecognized escape sequence \"\\%.*s\" truncated\n",progname,1,&srcstr[i]);
+							break;
 					}
 					j++; i++;
 				}
@@ -311,6 +320,7 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 			fprintf(stderr,"%s: Internal error processing \"%s\"\n",progname,srcstr);
 		}
 	}
+
 	returnstr[j] = '\0';
 
 	*returnstrlen = j;
