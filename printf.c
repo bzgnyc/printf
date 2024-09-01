@@ -67,6 +67,32 @@ static int anyerrno;
 static char *progname;
 
 
+/*
+This is explicitly and intentionally a macro that generates a codeblock
+rather than a function as the former seems much simpler in this situation.
+Creating a polymorphic function that takes a variable number of arugments
+would be more complicated than helpful.  Nor would a single inline function
+work as simply.  Then instead of a while/do or similar idiom to hide that it
+is a macro rather than a function, leaving as a straight macro means the
+compiler will error if treated as a function called with a terminating ;.
+*/
+#define strtonum(num,convfunc,str,endptr)	errno = 0;\
+						num = convfunc;\
+						if ( errno > 0 || endptr[0] != '\0' ) {\
+							if ( errno > 0 )\
+								anyerrno = errno;\
+							else\
+								anyerrno = EINVAL;\
+							if ( errno > 0 && errno != EINVAL )\
+								fprintf(stderr,"%s: \"%s\": %s\n",progname,str,strerror(errno));\
+							else\
+								if ( endptr == str )\
+									fprintf(stderr,"%s: \"%s\": expected numeric value\n",progname,str);\
+								else\
+									fprintf(stderr,"%s: \"%s\": not completely converted\n",progname,str);\
+						}
+
+
 #if ULONG_MAX >= 0x10ffff
 #define strtocodepoint strtoul
 #elif defined(ULLONG_MAX) && ULLONG_MAX >= 0x10ffff
@@ -96,7 +122,6 @@ fromunicode(char32_t codepoint) {
 		anyerrno = errno;
 		perror(progname);
 		strcpy(returnstr,"");
-		return returnstr;
 	} else
 		if ( ( e = c32rtomb(returnstr,codepoint,&state) ) == (size_t) -1 ) {
 			anyerrno = errno;
@@ -185,6 +210,7 @@ fromunicode(uint32_t codepoint) {
 			if ( ( e = iconv(cd,&inbuf,&inbytesleft,&outbuf,&outbytesleft) ) == (size_t) -1 ) {
 				anyerrno = errno;
 				perror(progname);
+				strcpy(returnstr,"");
 			} else
 				outbuf[0] = '\0';
 
@@ -212,8 +238,9 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 	char *u;
 	int i = 0;
 	int j = 0;
+	int d = 0;
 
-	while ( srcstr[i] != '\0' ) {
+	while ( d >= 0 && srcstr[i] != '\0' ) {
 		if ( j < maxstrlen ) {
 			if ( srcstr[i] != '\\' ) {
 				returnstr[j] = srcstr[i];
@@ -279,7 +306,7 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 				}
 			}
 		} else {
-			i = srcstrlen;
+			d = -1;
 			anyerrno = EFAULT;
 			fprintf(stderr,"%s: Internal error processing \"%s\"\n",progname,srcstr);
 		}
@@ -298,7 +325,8 @@ sanitize1fmt(char *fmt, size_t fmtlen, char *specifier, size_t specifierlen) {
 	char *c;
 
 	// Could also use fmt[strcspn(fmt,ETC)] = '\0' here if we wanted to avoid string pointers
-	if ( ( c = strpbrk(fmt,"*$%\\" PRINTF_SPECIFIERS_INVALID PRINTF_SPECIFIERS) ) != NULL ) {					anyerrno = EINVAL;
+	if ( ( c = strpbrk(fmt,"*$%\\" PRINTF_SPECIFIERS_INVALID PRINTF_SPECIFIERS) ) != NULL ) {
+		anyerrno = EINVAL;
 		fprintf(stderr,"%s: Illegal format \"%%%s%s\" truncated to \"%%%.*s%s\"\n",progname,fmt,specifier,(int) (c-fmt),fmt,specifier);
 		c[0] = '\0';
 		fmtlen = (c-fmt);
@@ -398,26 +426,16 @@ printf1arg(char *prologue, size_t prologuelen,
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
 					wchar_t *warg = malloc(3 * sizeof(wchar_t)); // arg[0] + arg[1] + '\0'
 
-					sscanf(arg,"%2S",warg);
-					slli = warg[1];
+					if ( ( mbstowcs(warg,arg,2) ) == (size_t) -1 ) {
+						anyerrno = errno;
+						perror("printf format conversion");
+						slli = 0;
+					} else
+						slli = warg[1];
 
 					free(warg);
-				} else {
-					errno = 0;
-					slli = strtosint(arg,&endptr,0);
-					if ( errno > 0 || endptr[0] != '\0' ) {
-						if ( errno > 0 )
-							anyerrno = errno;
-						else
-							anyerrno = EINVAL;
-						if ( errno > 0 && errno != EINVAL )
-							fprintf(stderr,"%s: \"%s\": %s\n",progname,arg,strerror(errno));
-						else
-							if ( endptr == arg )
-								fprintf(stderr,"%s: \"%s\": expected numeric value\n",progname,arg);
-							else
-								fprintf(stderr,"%s: \"%s\": not completely converted\n",progname,arg);
-					}
+				} else { // This is intentionally a macro-generated codeblock not a function
+					strtonum(slli,strtosint(arg,&endptr,0),arg,endptr)
 				}
 			else
 				slli = 0;
@@ -433,35 +451,25 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			if ( arg != NULL )
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
-                                        wchar_t *warg = malloc(3 * sizeof(wchar_t)); // arg[0] + arg[1] + '\0'
+					wchar_t *warg = malloc(3 * sizeof(wchar_t)); // arg[0] + arg[1] + '\0'
 
-                                        sscanf(arg,"%2S",warg);
-                                        ulli = warg[1];
+					if ( ( mbstowcs(warg,arg,2) ) == (size_t) -1 ) {
+						anyerrno = errno;
+						perror("printf format conversion");
+						ulli = 0;
+					} else
+						ulli = warg[1];
 
 					free(warg);
-				} else {
-					errno = 0;
-					ulli = strtouint(arg,&endptr,0);
-					if ( errno > 0 || endptr[0] != '\0' ) {
-						if ( errno > 0 )
-							anyerrno = errno;
-						else
-							anyerrno = EINVAL;
-						if ( errno > 0 && errno != EINVAL )
-							fprintf(stderr,"%s: \"%s\": %s\n",progname,arg,strerror(errno));
-						else
-							if ( endptr == arg )
-								fprintf(stderr,"%s: \"%s\": expected numeric value\n",progname,arg);
-							else
-								fprintf(stderr,"%s: \"%s\": not completely converted\n",progname,arg);
-					}
+				} else { // This is intentionally a macro-generated codeblock not a function
+					strtonum(ulli,strtouint(arg,&endptr,0),arg,endptr)
 				}
 			else
 				ulli = 0;
 
 			printf(ufmt,uprologue,ulli,uepilogue);
 
-              		break;
+			break;
 		case 'f':
 		case 'F':
 		case 'e':
@@ -472,26 +480,12 @@ printf1arg(char *prologue, size_t prologuelen,
 		case 'A':
 			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
 
-			if ( arg != NULL ) {
-				errno = 0;
-				d = strtod(arg,&endptr);
-				if ( errno > 0 || endptr[0] != '\0' ) {
-					if ( errno > 0 )
-						anyerrno = errno;
-					else
-						anyerrno = EINVAL;
-					if ( errno > 0 && errno != EINVAL )
-						fprintf(stderr,"%s: \"%s\": %s\n",progname,arg,strerror(errno));
-					else
-						if ( endptr == arg )
-							fprintf(stderr,"%s: \"%s\": expected numeric value\n",progname,arg);
-						else
-							fprintf(stderr,"%s: \"%s\": not completely converted\n",progname,arg);
-				}
+			if ( arg != NULL ) { // This is intentionally a macro-generated codeblock not a function
+				strtonum(d,strtod(arg,&endptr),arg,endptr)
 			} else
 				d = 0.0;
 
-                        printf(ufmt,uprologue,d,uepilogue);
+			printf(ufmt,uprologue,d,uepilogue);
 
 			break;
 		case 's':
@@ -724,7 +718,7 @@ parse1fmt(char *s1, size_t *returnn1,
 					s5[0] = '\0'; n5 = 0;
 					break;
 				default: // Should never happen -> internal error
-		                        anyerrno = EFAULT;
+					anyerrno = EFAULT;
 					fprintf(stderr,"%s: Internal error with format %s\n",progname,fmt);
 					n = strlen(fmt);
 					break;
