@@ -105,7 +105,7 @@ compiler will error if treated as a function called with a terminating ;.
 #include <uchar.h>
 
 char *
-fromunicode(char32_t codepoint) {
+fromunicode(size_t returnstrlen, char32_t codepoint) {
 
 	char *returnstr = malloc(MB_LEN_MAX + 1);
 	size_t e;
@@ -122,13 +122,17 @@ fromunicode(char32_t codepoint) {
 		anyerrno = errno;
 		perror(progname);
 		strcpy(returnstr,"");
+		*returnstrlen = 0;
 	} else
 		if ( ( e = c32rtomb(returnstr,codepoint,&state) ) == (size_t) -1 ) {
 			anyerrno = errno;
 			perror(progname);
 			strcpy(returnstr,"");
-		} else
+			*returnstrlen = 0;
+		} else {
 			returnstr[e]='\0';
+			*returnstrlen = e;
+		}
 
 	return returnstr;
 }
@@ -136,7 +140,7 @@ fromunicode(char32_t codepoint) {
 #define HAVE_FROMUNICODE
 
 char *
-fromunicode(wchar_t codepoint) {
+fromunicode(size_t *returnstrlen, wchar_t codepoint) {
 
 	char *returnstr = malloc(MB_LEN_MAX + 1);
 	int e;
@@ -147,6 +151,7 @@ fromunicode(wchar_t codepoint) {
 		perror(progname);
 		strcpy(returnstr,"");
 
+		*returnstrlen = 0;
 		return returnstr;
 	}
 
@@ -162,8 +167,11 @@ fromunicode(wchar_t codepoint) {
 		anyerrno = errno;
 		perror(progname);
 		strcpy(returnstr,"");
-	} else
+		*returnstrlen = 0;
+	} else {
 		returnstr[e]='\0';
+		*returnstrlen = e;
+	}
 
 	return returnstr;
 }
@@ -176,7 +184,7 @@ fromunicode(wchar_t codepoint) {
 #include <inttypes.h>
 
 char *
-fromunicode(uint32_t codepoint) {
+fromunicode(size_t *returnstrlen, uint32_t codepoint) {
 
 	iconv_t cd;
 	size_t e;
@@ -192,6 +200,7 @@ fromunicode(uint32_t codepoint) {
 		perror(progname);
 		strcpy(returnstr,"");
 
+		*returnstrlen = 0;
 		return returnstr;
 	}
 
@@ -200,6 +209,7 @@ fromunicode(uint32_t codepoint) {
 		perror(progname);
 		strcpy(returnstr,"");
 
+		*returnstrlen = 0;
 		return returnstr;
 	} else
 		if ( ( e = iconv(cd,NULL,NULL,NULL,NULL) ) == (size_t) -1 ) {
@@ -216,13 +226,14 @@ fromunicode(uint32_t codepoint) {
 
 	iconv_close(cd);
 
+	*returnstrlen = (outbuf - returnstr);
 	return returnstr;
 }
 #endif // fromunicode
 
 
 char *
-unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
+unescape(size_t *returnstrlen, size_t srcstrlen, char *srcstr, int *abortext ) {
 
 	// srcstrlen == -1 -> strlen(srcstr) is unknown
 	int maxstrlen = (((srcstrlen) == (-1)) ? (ARG_MAX) : (srcstrlen + 1));
@@ -235,11 +246,12 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 	char *returnstr = malloc(maxstrlen * sizeof(char));
 	char c[8+1];
 	char *endptr;
-	char *u;
-	int d = 0;
+	size_t ulen; char *u;
+	size_t seglen;
+
 	size_t i = 0;
 	size_t j = 0;
-	size_t seglen;
+	int d = 0;
 
 	while ( d >= 0 && srcstr[i] != '\0' ) {
 		if ( (maxstrlen-j) > 0 ) {
@@ -264,12 +276,13 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 						case 'v': returnstr[j] = '\v'; break;
 						case 'u':
 #ifdef HAVE_FROMUNICODE
-							strncpy(c,&srcstr[i+1],4); c[4]='\0';										u = fromunicode(strtocodepoint(c,&endptr,16));
+							strncpy(c,&srcstr[i+1],4); c[4]='\0';										u = fromunicode(&ulen,strtocodepoint(c,&endptr,16));
 							i += (endptr-c);
-							if ( (j + strlen(u)) < maxstrlen )
-								j += stpcpy(&returnstr[j],u) - &returnstr[j] - 1; // -1 to offset j++ below
-							else
-								j = maxstrlen;
+							if ( (j + ulen) < maxstrlen ) {
+								strncpy(&returnstr[j],u,ulen);
+								j += ulen - 1; // -1 to offset j++ below
+							} else
+								d = -1;
 
 							free(u);
 #else
@@ -280,11 +293,12 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 						case 'U':
 #ifdef HAVE_FROMUNICODE
 							strncpy(c,&srcstr[i+1],8); c[8]='\0';
-							u = fromunicode(strtocodepoint(c,&endptr,16));
+							u = fromunicode(&ulen,strtocodepoint(c,&endptr,16));
 							i += (endptr-c);
-							if ( (j + strlen(u)) < maxstrlen )
-								j += stpcpy(&returnstr[j],u) - &returnstr[j] - 1; // -1 to offset j++ below
-							else
+							if ( (j + ulen) < maxstrlen ) {
+								strncpy(&returnstr[j],u,ulen);
+								j += ulen - 1; 
+							} else
 								j = maxstrlen;
 
 							free(u);
@@ -330,7 +344,7 @@ unescape(size_t *returnstrlen, char *srcstr, size_t srcstrlen, int *abortext ) {
 
 // This sanitizes a printf format string of any unexpected (and therefore unsupported) specifier (e.g. "%n") and/or read an extra argument (e.g. unprocessed "*") and/or user supplied length specifiers (which may mismatch with actual parameters)
 int
-sanitize1fmt(char *fmt, size_t fmtlen, char *specifier, size_t specifierlen) {
+sanitize1fmt(size_t fmtlen, char *fmt, size_t specifierlen, char *specifier) {
 
 	char *c;
 
@@ -356,9 +370,9 @@ sanitize1fmt(char *fmt, size_t fmtlen, char *specifier, size_t specifierlen) {
 // This prepares a format string incorporating fmt but also making room for prologue and epilogue text parameters
 char *
 prep1fmt(size_t *returnlen,
-	char *fmt, size_t fmtlen,
-	char *length_modifier, size_t length_modifierlen,
-	char *specifier, size_t specifierlen) {
+	size_t fmtlen, char *fmt,
+	size_t length_modifierlen, char *length_modifier,
+	size_t specifierlen, char *specifier) {
 
 	char *ufmt;
 	size_t ufmtlen;
@@ -377,17 +391,17 @@ prep1fmt(size_t *returnlen,
 
 
 int
-printf1arg(char *prologue, size_t prologuelen,
-	char *fmt, size_t fmtlen,
-	char *specifier, size_t specifierlen,
-	char *epilogue, size_t epiloguelen, char *arg) {
+printf1arg(size_t prologuelen, char *prologue,
+	size_t fmtlen, char *fmt,
+	size_t specifierlen, char *specifier,
+	size_t epiloguelen, char *epilogue, char *arg) {
 
 	int abort = 0;
 
-	char *uprologue; size_t uprologuelen;
-	char *ufmt; size_t ufmtlen;
-	char *uepilogue; size_t uepiloguelen;
-	char *uarg; size_t uarglen;
+	size_t uprologuelen; char *uprologue;
+	size_t ufmtlen; char *ufmt;
+	size_t uepiloguelen; char *uepilogue;
+	size_t uarglen; char *uarg;
 
 #if C_Year >= 1999 
 #define	strtosint	strtoll
@@ -407,11 +421,11 @@ printf1arg(char *prologue, size_t prologuelen,
 	char *endptr;
 
 	if ( prologuelen > 0 )
-		uprologue = unescape(&uprologuelen,prologue,prologuelen,NULL);
+		uprologue = unescape(&uprologuelen,prologuelen,prologue,NULL);
 	else
 		uprologue = "";
 	if ( epiloguelen > 0 )
-		uepilogue = unescape(&uepiloguelen,epilogue,epiloguelen,NULL);
+		uepilogue = unescape(&uepiloguelen,epiloguelen,epilogue,NULL);
 	else
 		uepilogue = "";
 
@@ -423,14 +437,14 @@ printf1arg(char *prologue, size_t prologuelen,
 		printf("%s%%%s",uprologue,uepilogue);
 	else {
 		// Sanitize fmt for anything that would throw off call printf(3) such as causing it to read an extra argument
-		fmtlen = sanitize1fmt(fmt,fmtlen,specifier,specifierlen);
+		fmtlen = sanitize1fmt(fmtlen,fmt,specifierlen,specifier);
 		
 		ufmtlen = 0;
 
 		switch(specifier[0]) {
 		case 'd':
 		case 'i':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,INT_LM,strlen(INT_LM),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(INT_LM),INT_LM,specifierlen,specifier);
 
 			if ( arg != NULL )
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
@@ -457,7 +471,7 @@ printf1arg(char *prologue, size_t prologuelen,
 		case 'X':
 		case 'o':
 		case 'u':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,INT_LM,strlen(INT_LM),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(INT_LM),INT_LM,specifierlen,specifier);
 
 			if ( arg != NULL )
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
@@ -488,7 +502,7 @@ printf1arg(char *prologue, size_t prologuelen,
 		case 'G':
 		case 'a':
 		case 'A':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",specifierlen,specifier);
 
 			if ( arg != NULL ) { // This is intentionally a macro-generated codeblock not a function
 				strtonum(d,strtod(arg,&endptr),arg,endptr)
@@ -499,7 +513,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			break;
 		case 's':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",specifierlen,specifier);
 
 			if ( arg != NULL )
 				printf(ufmt,uprologue,arg,uepilogue);
@@ -508,7 +522,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			break;
 		case 'S':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",specifierlen,specifier);
 
 			if ( arg != NULL ) {
 				wchar_t *wfmt;
@@ -538,10 +552,10 @@ printf1arg(char *prologue, size_t prologuelen,
 			break;
 		case 'b':
 			// %b -> %s for call to printf(3)
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),"s",strlen("s"));
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",strlen("s"),"s");
 
 			if ( arg != NULL ) {
-				uarg = unescape(&uarglen,arg,-1,&abort);
+				uarg = unescape(&uarglen,-1,arg,&abort);
 
 				if ( abort == 0 )
 					printf(ufmt,uprologue,uarg,uepilogue);
@@ -555,7 +569,7 @@ printf1arg(char *prologue, size_t prologuelen,
 			break;
 		case 'Q':
 			// %Q -> %S for call to printf(3)
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),"S",strlen("S"));
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",strlen("S"),"S");
 
 			if ( arg != NULL ) {
 				wchar_t *wfmt;
@@ -568,7 +582,7 @@ printf1arg(char *prologue, size_t prologuelen,
 					anyerrno = errno;
 					perror("printf format conversion");
 				} else {
-					uarg = unescape(&uarglen,arg,-1,&abort);
+					uarg = unescape(&uarglen,-1,arg,&abort);
 					warg = malloc((uarglen+1) * sizeof(wchar_t));
 					if ( ( nwarg = mbstowcs(warg,uarg,uarglen+1) ) == (size_t) -1 ) {
 						anyerrno = errno;
@@ -589,7 +603,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			break;
 		case 'c':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",specifierlen,specifier);
 
 			if ( arg != NULL )
 				printf(ufmt,uprologue,(int) arg[0],uepilogue);
@@ -598,7 +612,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			break;
 		case 'C':
-			ufmt = prep1fmt(&ufmtlen,fmt,fmtlen,"",strlen(""),specifier,specifierlen);
+			ufmt = prep1fmt(&ufmtlen,fmtlen,fmt,strlen(""),"",specifierlen,specifier);
 
 			if ( arg != NULL ) {
 				wchar_t *wfmt;
@@ -640,11 +654,12 @@ printf1arg(char *prologue, size_t prologuelen,
 
 
 int
-parse1fmt(char *s1, size_t *returnn1,
-	char *s2, size_t *returnn2,
-	char *s3, size_t *returnn3,
-	char *s4, size_t *returnn4,
-	char *s5, size_t *returnn5, char *fmt, size_t fmtlen) {
+parse1fmt(size_t *returnn1, char *s1,
+	size_t *returnn2, char *s2,
+	size_t *returnn3, char *s3,
+	size_t *returnn4, char *s4,
+	size_t *returnn5, char *s5,
+	size_t fmtlen, char *fmt) {
 
 	size_t n;
 	size_t n1 = 0;
@@ -742,7 +757,7 @@ parse1fmt(char *s1, size_t *returnn1,
 
 
 int
-fmtpullparams(char *s3, size_t *n3, int nextarg, char *args[], int numargs) {
+fmtpullparams(size_t *n3, char *s3, int numargs, char *args[], int nextarg) {
 
 	char	*c;
 	size_t	fmt_width_i;
@@ -795,7 +810,7 @@ fmtpullparams(char *s3, size_t *n3, int nextarg, char *args[], int numargs) {
 
 
 int
-parsefmt(char *fmt, size_t fmtlen, char *args[], int numargs) {
+parsefmt(size_t fmtlen, char *fmt, int numargs, char *args[]) {
 
 	int nextarg = 0;
 	char *s1 = malloc((fmtlen+1) * sizeof(char));
@@ -807,12 +822,12 @@ parsefmt(char *fmt, size_t fmtlen, char *args[], int numargs) {
 	size_t n;
 
 	while ( fmt[0] != '\0' ) {
-		n = parse1fmt(s1,&n1,s2,&n2,s3,&n3,s4,&n4,s5,&n5,fmt,fmtlen);
+		n = parse1fmt(&n1,s1,&n2,s2,&n3,s3,&n4,s4,&n5,s5,fmtlen,fmt);
 
 		if ( n3 > 0 )
-			nextarg = fmtpullparams(s3,&n3,nextarg,args,numargs);
+			nextarg = fmtpullparams(&n3,s3,numargs,args,nextarg);
 
-		if ( printf1arg(s1,n1,s3,n3,s4,n4,s5,n5,args[nextarg]) != 0 ) {
+		if ( printf1arg(n1,s1,n3,s3,n4,s4,n5,s5,args[nextarg]) != 0 ) {
 			free(s5); free(s3); free(s1);
 			return numargs;
 		}
@@ -866,7 +881,7 @@ main (int argc, char *argv[]) {
 			fmt = argv[nextarg]; nextarg++;
 
 			do
-				nextarg += parsefmt(fmt,ARG_MAX-1,&argv[nextarg],argc-nextarg);
+				nextarg += parsefmt(ARG_MAX-1,fmt,argc-nextarg,&argv[nextarg]);
 			while ( nextarg>2 && nextarg < argc ); // If nextarg==2 then exit after one pass since that means no arguments were consumed by fmt
 		} else {
 			usage();
