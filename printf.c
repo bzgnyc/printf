@@ -111,6 +111,8 @@ fromunicode(size_t returnstrlen, char32_t codepoint) {
 	size_t e;
 	mbstate_t ps;
 
+	// For now assuming c32rtomb, etc disallow invalid Unicode codepoints
+
 	/*
 	Initialize state -- unclear if this is needed or even desirable
 	to do each iteration.  Or should state be maintained as a global
@@ -145,7 +147,11 @@ fromunicode(size_t *returnstrlen, wchar_t codepoint) {
 	char *returnstr = malloc(MB_LEN_MAX + 1);
 	int e;
 
-	if ( codepoint > 0x10FFFF ) {
+	/*
+	Disallow invalid Unicode codepoints even if possible to compute 
+	UTF-8, etc codeunit sequences for them
+	*/
+	if ( codepoint > 0x10FFFF || ( codepoint >= 0xD800 && codepoint < 0xE000 ) ) {
 		errno = EILSEQ;
 		anyerrno = errno;
 		perror(progname);
@@ -194,7 +200,11 @@ fromunicode(size_t *returnstrlen, uint32_t codepoint) {
 	char *returnstr = malloc(MB_LEN_MAX + 1);
 	char *outbuf = returnstr;
 
-	if ( codepoint > 0x10FFFF ) {
+	/*
+	Disallow invalid Unicode codepoints even if possible to compute
+	UTF-8, etc codeunit sequences for them.
+	*/
+	if ( codepoint > 0x10FFFF || ( codepoint >= 0xD800 && codepoint < 0xE000 ) ) {
 		errno = EILSEQ;
 		anyerrno = errno;
 		perror(progname);
