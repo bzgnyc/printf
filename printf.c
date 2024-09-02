@@ -724,10 +724,13 @@ parse1fmt(size_t *returnn1, char *s1,
 						} else {
 							if ( d == 0 ) {
 								anyerrno = EINVAL;
-								fprintf(stderr,"%s: Illegal format \"%.*s\" truncated to \"%.*s\"\n",progname,(int) (n2 + strnlen(&fmt[n2],1)),&fmt[n1],(int) strnlen(&fmt[n2],1),&fmt[n2]);
-//								strncpy(s4,&fmt[n2],1); s4[1]='\0'; n4 = strlen(s4);
+								if ( fmt[n2] == '\0' )
+									n3 = 0;
+								else
+									n3 = 1;
+								fprintf(stderr,"%s: Illegal format \"%.*s\" truncated to \"%.*s\"\n",progname,(int) (n2 + n3),&fmt[n1],(int) n3,&fmt[n2]);
+								n3 = 0;
 								s4[0]='\0'; n4 = 0;
-//								n = n2 + strnlen(&fmt[n2],1);
 							}
 							n = n2 + n4;
 							s5[0] = '\0'; n5 = 0;
