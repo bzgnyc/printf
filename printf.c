@@ -434,7 +434,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			if ( arg != NULL )
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
-					wchar_t *warg = malloc(3 * sizeof(wchar_t)); // arg[0] + arg[1] + '\0'
+					wchar_t *warg = malloc(2 * sizeof(wchar_t)); // arg[0] + arg[1] but no null
 
 					if ( ( mbstowcs(warg,arg,2) ) == (size_t) -1 ) {
 						anyerrno = errno;
@@ -461,7 +461,7 @@ printf1arg(char *prologue, size_t prologuelen,
 
 			if ( arg != NULL )
 				if ( arg[0] == '\'' || arg[0] == '"' ) {
-					wchar_t *warg = malloc(3 * sizeof(wchar_t)); // arg[0] + arg[1] + '\0'
+					wchar_t *warg = malloc(2 * sizeof(wchar_t)); // arg[0] + arg[1] + but no null
 
 					if ( ( mbstowcs(warg,arg,2) ) == (size_t) -1 ) {
 						anyerrno = errno;
@@ -563,14 +563,14 @@ printf1arg(char *prologue, size_t prologuelen,
 				wchar_t *warg;
 				size_t nwarg;
 
-				uarg = unescape(&uarglen,arg,-1,&abort);
 				wfmt = malloc((ufmtlen+1) * sizeof(wchar_t)); // Assume wcslen(wfmt) <= strlen(ufmt) && strlen(ufmt) <= ufmtlen
 				if ( ( nwfmt = mbstowcs(wfmt,ufmt,ufmtlen+1) ) == (size_t) -1 ) {
 					anyerrno = errno;
 					perror("printf format conversion");
 				} else {
-					warg = malloc(ARG_MAX * sizeof(wchar_t));
-					if ( ( nwarg = mbstowcs(warg,uarg,ARG_MAX) ) == (size_t) -1 ) {
+					uarg = unescape(&uarglen,arg,-1,&abort);
+					warg = malloc((uarglen+1) * sizeof(wchar_t));
+					if ( ( nwarg = mbstowcs(warg,uarg,uarglen+1) ) == (size_t) -1 ) {
 						anyerrno = errno;
 						perror("printf argument conversion");
 					} else
@@ -580,10 +580,10 @@ printf1arg(char *prologue, size_t prologuelen,
 							wprintf(wfmt,uprologue,warg,L"");
 
 					free(warg);
+					free(uarg);
 				}
 
 				free(wfmt);
-				free(uarg);
 			} else
 				printf(ufmt,uprologue,L"",uepilogue);
 
